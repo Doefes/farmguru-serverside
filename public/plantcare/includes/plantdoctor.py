@@ -6,13 +6,11 @@ import numpy as np
 import MySQLdb as mdb
 import os
 import copy
+from sklearn import neighbors
 
 # import needed scikit-image modules
-from skimage import io 
+from skimage import io
 from skimage.color import rgb2hsv, rgb2gray
-from skimage.measure import structural_similarity as ssim
-from skimage.transform import resize
-from skimage.filter import gaussian_filter as gf
 from scipy import ndimage
 from skimage.filter import threshold_otsu as otsu
 from skimage.morphology import disk, erosion 
@@ -39,7 +37,6 @@ class PlantDoctor:
 
         otsu_mean = otsu(img_gray)
         otsu_img = img_gray < otsu_mean
-        io.imsave("Otsu.png", otsu_img)
         self.images.append([otsu_img, "Otsu"])
 
         eroded_img = ndimage.binary_fill_holes(erosion(otsu_img, disk(1)))
@@ -47,7 +44,6 @@ class PlantDoctor:
         markers = ndimage.label(eroded_img)[0]
 
         self.images.append([markers, "Markers"])
-        io.imsave("Markers.png", otsu_img)
         
         markers_copy = markers.astype(float)
         markers_copy[markers_copy == 0] = np.nan
@@ -68,13 +64,12 @@ class PlantDoctor:
 
         return img_mask
 
-    def diagnose(self, img):
+    def extract_disease(self, img):
         self.images.append([img, "Original"])
-        io.imsave("Original.png", img)
         #TODO resize image to speed up analysis (determine breaking point for quality)
         img_extracted = self.extract_leaf(img)
+
         self.images.append([img_extracted, "Extracted Leaf"])
-        io.imsave("Extracted.png", img_extracted)
         # set diseased pixels to 1, and healthy pixels to 0 (binary representation of regions)
         img_bin = np.where(rgb2hsv(img_extracted) < 0.15, 1.0, 0.0)
 
@@ -86,37 +81,34 @@ class PlantDoctor:
                     for subindex, value in enumerate(img[row,index,:]):
                         img_mask[row,index,subindex] = 255
 
-        self.images.append([img_mask, "Extracted Disease"])
-        io.imsave("Extracted_disease.png", img_mask)
-        """
-            create a SSIM dictionary by comparing the uploaded image with our local dataset.
-            SSIM documentation: http://en.wikipedia.org/wiki/Structural_similarity
-        """
-        ssim_list = {}
-        img_mask = rgb2gray(gf(img_mask, sigma=1))
+        n_neighbors = 5
+        dataset_hists = []
+        dataset_diseases = []
+        index = 0
         for image, disease in self.dataset:
-            image = rgb2gray(gf(image, sigma=1))
-            mask_shape = img_mask.shape
-            disease_shape = image.shape
-            if(mask_shape != disease_shape):
-                img_mask = resize(img_mask, (disease_shape[0], disease_shape[1]))
+            image_hist = []
+            for i in range(0,3):
+                channel_hist = np.histogram(image[:,:,i], range=(0,255))
+                channel_hist = list(channel_hist[0])
+                for n in channel_hist:
+                        image_hist.append(n)
+            dataset_hists.append(image_hist)
+            dataset_diseases.append(disease)
+            index += 1 
+        index = 0
+        input_hist = []
+        for i in range(0,3):
+            channel_hist = np.histogram(img_mask[:,:,i], range=(0,255))
+            channel_hist = list(channel_hist[0])
+            for n in channel_hist:
+                    input_hist.append(n)
+        clf = neighbors.KNeighborsClassifier(n_neighbors, weights='distance')
+        clf.fit(dataset_hists, dataset_diseases)
+        diagnosis = clf.predict(input_hist)[0]
 
-            ssim_disease = ssim(img_mask, image)
-            if disease in ssim_list:
-                ssim_list[disease].append(ssim_disease*100)
-            else:
-                ssim_list[disease] = [ssim_disease*100]
-
-        # determine which dataset (disease) best matches the uploaded image
-        highest_similarity = ['disease', 0];
-        for disease, value in ssim_list.items():
-            for match in value:
-                if (match > highest_similarity[1]):
-                    highest_similarity = [disease, match]
-
-        # return the name of the diagnosed disease
+        self.images.append([img_mask, "Disease: %s " % diagnosis])
         self.show_images()
-        return str(highest_similarity[0])
+        return diagnosis
 
     def get_images(self):
         images = []
@@ -141,7 +133,6 @@ class PlantDoctor:
 
     def show_images(self):
         numb_of_imgs = len(self.images)
-        print numb_of_imgs
         fig = plt.figure()
         n = 1
         for image,title in self.images:
