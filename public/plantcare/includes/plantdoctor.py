@@ -7,6 +7,7 @@ import MySQLdb as mdb
 import os
 import copy
 from sklearn import neighbors
+from sklearn.externals import joblib
 
 # import needed scikit-image modules
 from skimage import io
@@ -86,9 +87,10 @@ class PlantDoctor:
         dataset_diseases = []
         index = 0
         for image, disease in self.dataset:
+            image = rgb2hsv(image)
             image_hist = []
             for i in range(0,3):
-                channel_hist = np.histogram(image[:,:,i], range=(0,255))
+                channel_hist = np.histogram(image[:,:,i], range=(0,1))
                 channel_hist = list(channel_hist[0])
                 for n in channel_hist:
                         image_hist.append(n)
@@ -97,13 +99,15 @@ class PlantDoctor:
             index += 1 
         index = 0
         input_hist = []
+        img_mask = rgb2hsv(img_mask)
         for i in range(0,3):
-            channel_hist = np.histogram(img_mask[:,:,i], range=(0,255))
+            channel_hist = np.histogram(img_mask[:,:,i], range=(0,1))
             channel_hist = list(channel_hist[0])
             for n in channel_hist:
                     input_hist.append(n)
         clf = neighbors.KNeighborsClassifier(n_neighbors, weights='distance')
         clf.fit(dataset_hists, dataset_diseases)
+        joblib.dump(clf, 'models/hsvmodel.pkl')
         diagnosis = clf.predict(input_hist)[0]
 
         self.images.append([img_mask, "Disease: %s " % diagnosis])
@@ -128,7 +132,6 @@ class PlantDoctor:
             return images
 
         except mdb.Error, e:
-
             print "Error %d: %s" % (e.args[0],e.args[1])
 
     def show_images(self):
