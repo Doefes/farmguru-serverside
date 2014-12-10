@@ -33,6 +33,12 @@ class PlantDoctor:
             img_disease = io.imread(script_root+'/'+url)
             self.dataset.append([img_disease, disease])
 
+    def diagnose(self, img):
+        leaf_extracted = self.extract_leaf(img)
+        disease_extracted = self.extract_disease(img, leaf_extracted)
+        diagnosis = self.analyze_disease(disease_extracted)
+        return diagnosis
+
     def extract_leaf(self, img):
         img_gray = rgb2gray(img)
 
@@ -65,10 +71,9 @@ class PlantDoctor:
 
         return img_mask
 
-    def extract_disease(self, img):
+    def extract_disease(self, img, img_extracted):
         self.images.append([img, "Original"])
         #TODO resize image to speed up analysis (determine breaking point for quality)
-        img_extracted = self.extract_leaf(img)
 
         self.images.append([img_extracted, "Extracted Leaf"])
         # set diseased pixels to 1, and healthy pixels to 0 (binary representation of regions)
@@ -82,37 +87,25 @@ class PlantDoctor:
                     for subindex, value in enumerate(img[row,index,:]):
                         img_mask[row,index,subindex] = 255
 
-        n_neighbors = 5
-        dataset_hists = []
-        dataset_diseases = []
-        index = 0
-        for image, disease in self.dataset:
-            image = rgb2hsv(image)
-            image_hist = []
-            for i in range(0,3):
-                channel_hist = np.histogram(image[:,:,i], range=(0,1))
-                channel_hist = list(channel_hist[0])
-                for n in channel_hist:
-                        image_hist.append(n)
-            dataset_hists.append(image_hist)
-            dataset_diseases.append(disease)
-            index += 1 
-        index = 0
+        return img_mask
+
+           
+    def analyze_disease(self, img):
         input_hist = []
-        img_mask = rgb2hsv(img_mask)
+        img_mask = rgb2hsv(img)
         for i in range(0,3):
             channel_hist = np.histogram(img_mask[:,:,i], range=(0,1))
             channel_hist = list(channel_hist[0])
             for n in channel_hist:
-                    input_hist.append(n)
-        clf = neighbors.KNeighborsClassifier(n_neighbors, weights='distance')
-        clf.fit(dataset_hists, dataset_diseases)
-        joblib.dump(clf, 'models/hsvmodel.pkl')
+                input_hist.append(n)
+
+        clf = joblib.load('models/hsvmodel.pkl')
         diagnosis = clf.predict(input_hist)[0]
 
         self.images.append([img_mask, "Disease: %s " % diagnosis])
-        self.show_images()
+        #self.show_images()
         return diagnosis
+
 
     def get_images(self):
         images = []
@@ -147,3 +140,23 @@ class PlantDoctor:
             n += 1
         fig.set_size_inches(np.array(fig.get_size_inches()) * numb_of_imgs)
         plt.show()
+
+    def create_knn_model(self, n_neighbors, c_space):
+        dataset_hists = []
+        dataset_diseases = []
+        index = 0
+        for image, disease in self.dataset:
+            image = rgb2hsv(image)
+            image_hist = []
+            for i in range(0,3):
+                channel_hist = np.histogram(image[:,:,i], range=(0,1))
+                channel_hist = list(channel_hist[0])
+                for n in channel_hist:
+                        image_hist.append(n)
+            dataset_hists.append(image_hist)
+            dataset_diseases.append(disease)
+            index += 1 
+        clf = neighbors.KNeighborsClassifier(n_neighbors, weights='distance')
+        clf.fit(dataset_hists, dataset_diseases)
+        joblib.dump(clf, 'models/%s.pkl') % c_space
+

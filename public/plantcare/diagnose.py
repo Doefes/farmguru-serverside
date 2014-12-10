@@ -5,7 +5,7 @@ from includes.plantdoctor import PlantDoctor
 def post_response(image_path):
         img = io.imread(image_path)
         doctor = PlantDoctor()
-        diagnosis = doctor.extract_disease(img)
+        diagnosis = doctor.diagnose(img)
         print "%s" %diagnosis
 
 if __name__ == '__main__':
